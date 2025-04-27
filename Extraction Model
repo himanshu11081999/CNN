@@ -1,0 +1,94 @@
+# ========================== #
+# Prescription Extraction Script (Google Colab Final Version)
+# Model: Donut (naver-clova-ix/donut-base-finetuned-docvqa)
+# Assignment: ICMR PROSPECT Recruitment
+# ========================== #
+
+# 1. Install libraries (if not already installed)
+!pip install transformers==4.30.2 -q
+!pip install torch torchvision torchaudio -q
+!pip install sentencepiece -q
+
+# 2. Import necessary libraries
+import os
+import json
+import zipfile
+import torch
+from PIL import Image
+from transformers import DonutProcessor, VisionEncoderDecoderModel
+
+# 3. Upload 'archive.zip' manually
+# Go to: Left sidebar → Files → Upload → Select 'archive.zip'
+
+# 4. Extract the ZIP file
+zip_path = '/content/archive.zip'  # Uploaded ZIP path
+extract_path = '/content/images'   # Extract destination
+
+with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+    zip_ref.extractall(extract_path)
+
+print(" Archive extracted successfully.")
+
+# 5. Detect Correct Image Folder
+folders = os.listdir(extract_path)
+if len(folders) == 1 and os.path.isdir(os.path.join(extract_path, folders[0])):
+    image_folder = os.path.join(extract_path, folders[0])  # If inside subfolder
+else:
+    image_folder = extract_path  # Images directly
+
+print(" Image folder set to:", image_folder)
+
+# 6. Load the Donut Processor and Model
+print("Loading Donut model...")
+model_name = "naver-clova-ix/donut-base-finetuned-docvqa"
+processor = DonutProcessor.from_pretrained(model_name)
+model = VisionEncoderDecoderModel.from_pretrained(model_name)
+
+# 7. Set Device
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model.to(device)
+model.eval()
+torch.set_grad_enabled(False)
+
+# 8. Define Extraction Function
+def extract_from_prescription(image_path):
+    try:
+        image = Image.open(image_path).convert("RGB")
+    except Exception as e:
+        print(f"Error opening {image_path}: {e}")
+        return {"error": str(e), "raw_text": ""}
+    
+    try:
+        pixel_values = processor(images=image, return_tensors="pt").pixel_values
+        pixel_values = pixel_values.to(device)
+        generated_ids = model.generate(pixel_values, max_length=512, num_beams=3)
+        generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        
+        try:
+            structured_output = json.loads(generated_text)
+        except json.JSONDecodeError:
+            structured_output = {"raw_text": generated_text}
+        
+        return structured_output
+    except Exception as e:
+        print(f"Model inference failed for {image_path}: {e}")
+        return {"error": str(e), "raw_text": ""}
+
+# 9. Process All Images
+output_data = {}
+image_files = [f for f in os.listdir(image_folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
+
+print(f" Found {len(image_files)} image(s) to process.")
+
+for idx, image_file in enumerate(image_files, start=1):
+    image_path = os.path.join(image_folder, image_file)
+    print(f"[{idx}/{len(image_files)}] Processing: {image_file}")
+    structured_output = extract_from_prescription(image_path)
+    output_data[image_file] = structured_output
+
+# 10. Save the Results
+output_filename = "/content/extracted_prescriptions_colab.json"
+with open(output_filename, "w") as f:
+    json.dump(output_data, f, indent=4)
+
+print(f"\n Extraction Completed! Results saved to: {output_filename}")
