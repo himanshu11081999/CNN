@@ -1,0 +1,59 @@
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
+import json
+
+# 1. Load extracted model outputs
+with open('/content/extracted_prescriptions_colab.json') as f:
+    extracted_outputs = json.load(f)
+
+# 2. Load ground truth annotations
+# (Assume you have a manually created ground_truth.json in the same format)
+with open('/content/ground_truth.json') as f:
+    ground_truth = json.load(f)
+
+# 3. List fields you want to evaluate
+fields = ['Patient Name', 'Doctor Name', 'Medicines', 'Dosage', 'Instructions']
+
+# 4. Prepare lists for each field
+y_true = {field: [] for field in fields}
+y_pred = {field: [] for field in fields}
+
+# 5. Fill the lists
+for image_name in ground_truth:
+    gt_record = ground_truth.get(image_name, {})
+    pred_record = extracted_outputs.get(image_name, {})
+
+    for field in fields:
+        gt_value = gt_record.get(field, "").lower().strip()
+        pred_value = pred_record.get(field, "").lower().strip()
+        y_true[field].append(gt_value)
+        y_pred[field].append(pred_value)
+
+# 6. Compute metrics
+print("Field-wise Evaluation Metrics:\n")
+for field in fields:
+    y_t = y_true[field]
+    y_p = y_pred[field]
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        y_t, y_p, average='micro', zero_division=0
+    )
+    print(f"Field: {field}")
+    print(f"Precision: {precision:.3f}")
+    print(f"Recall:    {recall:.3f}")
+    print(f"F1-Score:  {f1:.3f}")
+    print("-" * 30)
+
+# 7. Compute Exact Match Accuracy
+exact_match = 0
+total = 0
+for image_name in ground_truth:
+    gt_record = ground_truth.get(image_name, {})
+    pred_record = extracted_outputs.get(image_name, {})
+    match = all(
+        gt_record.get(field, "").lower().strip() == pred_record.get(field, "").lower().strip()
+        for field in fields
+    )
+    if match:
+        exact_match += 1
+    total += 1
+
+print(f"\n Exact Match Accuracy: {exact_match/total:.3f}")
