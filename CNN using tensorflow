@@ -1,0 +1,64 @@
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras.applications.vgg16 import preprocess_input
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+import numpy as np
+import os
+import json
+import zipfile
+
+# 4. Extract the ZIP file
+zip_path = '/content/few.zip'  # Uploaded ZIP path (adjust if using 'archive.zip')
+extract_path = '/content/images'   # Extract destination
+
+with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+    zip_ref.extractall(extract_path)
+
+print("✅ Archive extracted successfully.")
+
+# Load a pre-trained VGG16 model
+base_model = VGG16(weights='imagenet')
+# Remove the top classification layer to extract features
+model = Model(inputs=base_model.input, outputs=base_model.get_layer('fc1').output)
+
+def extract_features(image_path):
+    """
+    Extract features from an image using the CNN model.
+    :param image_path: Path to the image file
+    :return: Feature vector as a numpy array
+    """
+    # Load and preprocess the image
+    image = load_img(image_path, target_size=(224, 224))
+    image_array = img_to_array(image)
+    image_array = np.expand_dims(image_array, axis=0)
+    image_array = preprocess_input(image_array)
+
+    # Extract features
+    features = model.predict(image_array)
+
+    return features
+
+if __name__ == "__main__":
+    # Example usage
+    # Assuming images are extracted to /content/images from few.zip
+    image_folder = "/content/images"
+    image_files = [f for f in os.listdir(image_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
+    # Dictionary to store features
+    features_data = {}
+
+    # Process each image in the folder
+    for image_file in image_files:
+        image_path = os.path.join(image_folder, image_file)
+        features = extract_features(image_path)
+
+        # Convert features to list for JSON serialization
+        features_data[image_file] = features.tolist()[0]
+
+    # Save features to JSON file
+    output_filename = "extracted_features.json"
+    with open(output_filename, "w") as f:
+        json.dump(features_data, f, indent=4)
+
+    print(f"✅ Features extracted and saved to: {output_filename}")
